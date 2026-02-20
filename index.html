@@ -1,0 +1,519 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>专业考务计时系统</title>
+    <style>
+        :root {
+            --bg-color: #f5f5f7; /* 更高级的浅灰背景 */
+            --panel-bg: #ffffff;
+            --text-main: #1d1d1f;
+            --text-sec: #86868b;
+            --line-color: rgba(0, 0, 0, 0.08);
+            --accent-color: #000000;
+            --wheel-item-h: 120px;
+        }
+
+        * {
+            box-sizing: border-box;
+            user-select: none;
+            -webkit-user-select: none;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "PingFang SC", "Microsoft YaHei", sans-serif;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            overflow: hidden;
+            touch-action: none; /* 全局禁止默认手势，由 JS 完全接管 */
+        }
+
+        /* ----- 核心主体：大数字时钟 (占据上半屏) ----- */
+        .clock-section {
+            flex: 1; /* 初始平分 */
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            transition: all 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+            width: 100%;
+        }
+
+        #main-clock {
+            font-size: 14rem; 
+            font-weight: 600; /* 稍微减轻字重，显得更锐利 */
+            letter-spacing: -0.03em;
+            font-variant-numeric: tabular-nums;
+            text-shadow: 0 4px 20px rgba(0,0,0,0.03);
+            transition: all 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        #current-subject-display {
+            font-size: 2.5rem; /* 【缩小字体】根据需求调整 */
+            font-weight: 500;
+            letter-spacing: 0.05em; /* 增加一点呼吸感 */
+            margin-top: 15px;
+            opacity: 0;
+            transform: translateY(20px);
+            transition: all 0.6s ease;
+            color: var(--text-sec);
+        }
+
+        /* ----- 底部区域 (滚轮或提示信息) ----- */
+        .bottom-section {
+            flex: 1; /* 初始平分 */
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        /* ----- 滚轮配置面板 (卡片化专业设计) ----- */
+        #config-area {
+            background: var(--panel-bg);
+            padding: 50px 80px;
+            border-radius: 32px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.05), 0 1px 3px rgba(0,0,0,0.02);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            transition: opacity 0.4s ease, transform 0.6s ease;
+            transform: translateY(0);
+        }
+
+        .wheels-row {
+            display: flex;
+            gap: 50px;
+            margin-bottom: 40px;
+        }
+
+        .wheel-group {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .wheel-label {
+            font-size: 1.2rem;
+            color: var(--text-sec);
+            margin-bottom: 20px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .wheel-viewport {
+            position: relative;
+            height: calc(var(--wheel-item-h) * 3);
+            width: 160px;
+            overflow: hidden;
+            -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 25%, black 75%, transparent 100%);
+            mask-image: linear-gradient(to bottom, transparent 0%, black 25%, black 75%, transparent 100%);
+        }
+
+        .wheel-scroll {
+            height: 100%;
+            overflow-y: scroll;
+            scroll-snap-type: y mandatory;
+            scrollbar-width: none;
+            cursor: grab;
+            touch-action: none; /* 确保统一处理 */
+        }
+        .wheel-scroll:active { cursor: grabbing; }
+        .wheel-scroll::-webkit-scrollbar { display: none; }
+
+        .wheel-item {
+            height: var(--wheel-item-h);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            scroll-snap-align: center;
+            font-size: 2.4rem;
+            color: #d2d2d7;
+            font-weight: 600;
+            transition: color 0.2s, transform 0.2s;
+        }
+        .wheel-item.active {
+            color: var(--text-main);
+            transform: scale(1.15);
+        }
+
+        /* 物理质感的选中框 */
+        .selection-bar {
+            position: absolute;
+            top: var(--wheel-item-h);
+            height: var(--wheel-item-h);
+            width: 100%;
+            border-top: 1.5px solid var(--line-color);
+            border-bottom: 1.5px solid var(--line-color);
+            background: rgba(0, 0, 0, 0.01); /* 极其微弱的物理槽内衬 */
+            pointer-events: none;
+            z-index: -1;
+        }
+
+        /* ----- 运行面板 (点击后出现) ----- */
+        #running-area {
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            opacity: 0;
+            transform: translateY(30px);
+            transition: all 0.8s ease;
+        }
+        #status-info {
+            font-size: 2rem;
+            font-weight: 500;
+            color: var(--text-sec);
+            margin-bottom: 15px;
+        }
+        #countdown-display {
+            font-size: 9rem;
+            font-weight: 700;
+            font-variant-numeric: tabular-nums;
+            color: var(--text-main);
+            text-shadow: 0 4px 20px rgba(0,0,0,0.03);
+        }
+
+        /* ----- 现代交互按钮 ----- */
+        .primary-btn {
+            background: var(--accent-color);
+            color: white;
+            border: none;
+            padding: 22px 70px;
+            border-radius: 60px;
+            font-size: 1.8rem;
+            font-weight: 600;
+            cursor: pointer;
+            box-shadow: 0 10px 20px rgba(0,0,0,0.15);
+            transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        .primary-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 14px 24px rgba(0,0,0,0.2);
+        }
+        .primary-btn:active { 
+            transform: scale(0.96); 
+            box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+        }
+
+        #restart-trigger {
+            margin-top: 40px;
+            background: #ffffff;
+            color: var(--text-main);
+            border: 1px solid rgba(0,0,0,0.1);
+            font-size: 1.4rem;
+            padding: 16px 50px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+        }
+
+        /* ----- 考试模式激活状态 ----- */
+        body.is-running .clock-section {
+            flex: 0 0 65%;
+        }
+        body.is-running #main-clock {
+            font-size: 20rem; /* 大幅放大主时钟 */
+        }
+        body.is-running #current-subject-display {
+            opacity: 1;
+            transform: translateY(0);
+        }
+        body.is-running .bottom-section {
+            flex: 0 0 35%;
+            justify-content: flex-start;
+            padding-top: 0;
+        }
+        body.is-running #running-area {
+            display: flex;
+            opacity: 1;
+            transform: translateY(0);
+        }
+        body.is-running #config-area {
+            opacity: 0;
+            transform: translateY(20px);
+            pointer-events: none;
+            position: absolute; /* 脱离文档流，不占空间 */
+        }
+
+    </style>
+</head>
+<body>
+
+    <!-- 上半部分：主体时钟 -->
+    <div class="clock-section">
+        <div id="main-clock">00:00:00</div>
+        <div id="current-subject-display">科目</div>
+    </div>
+
+    <!-- 下半部分：配置与倒计时 -->
+    <div class="bottom-section">
+        <!-- 配置态 (卡片包裹) -->
+        <div id="config-area">
+            <div class="wheels-row">
+                <div class="wheel-group">
+                    <div class="wheel-label">考试科目</div>
+                    <div class="wheel-viewport">
+                        <div class="selection-bar"></div>
+                        <div class="wheel-scroll" id="w-subject"></div>
+                    </div>
+                </div>
+                <div class="wheel-group">
+                    <div class="wheel-label">开始时</div>
+                    <div class="wheel-viewport">
+                        <div class="selection-bar"></div>
+                        <div class="wheel-scroll" id="w-hour"></div>
+                    </div>
+                </div>
+                <div class="wheel-group">
+                    <div class="wheel-label">开始分</div>
+                    <div class="wheel-viewport">
+                        <div class="selection-bar"></div>
+                        <div class="wheel-scroll" id="w-min"></div>
+                    </div>
+                </div>
+                <div class="wheel-group">
+                    <div class="wheel-label">时长(分)</div>
+                    <div class="wheel-viewport">
+                        <div class="selection-bar"></div>
+                        <div class="wheel-scroll" id="w-dur"></div>
+                    </div>
+                </div>
+            </div>
+            <button class="primary-btn" id="start-trigger">确认并开始</button>
+        </div>
+
+        <!-- 运行态 -->
+        <div id="running-area">
+            <div id="status-info">距离开始还有</div>
+            <div id="countdown-display">0:00:00</div>
+            <button class="primary-btn" id="restart-trigger" style="display: none;">结束并刷新</button>
+        </div>
+    </div>
+
+    <script>
+        const subjectList = ['语文', '数学', '英语', '物理', '化学', '生物', '政治', '历史', '地理'];
+        const durationList = Array.from({length: 22}, (_, i) => 30 + i * 10);
+        const ITEM_H = 120;
+        let timeOffset = 0;
+
+        // --- 时间同步 ---
+        async function syncTime() {
+            try {
+                const start = Date.now();
+                const res = await fetch(window.location.href, { method: 'HEAD', cache: 'no-store' });
+                const serverDate = res.headers.get('Date');
+                if (serverDate) {
+                    const serverTime = new Date(serverDate).getTime();
+                    timeOffset = (serverTime + (Date.now() - start)/2) - Date.now();
+                }
+            } catch (e) {}
+        }
+        function getNow() { return new Date(Date.now() + timeOffset); }
+
+        function refreshClock() {
+            const now = getNow();
+            document.getElementById('main-clock').innerText = 
+                now.toTimeString().split(' ')[0];
+        }
+        setInterval(refreshClock, 500);
+
+        // --- 滚轮逻辑 (加入物理惯性加速度算法) ---
+        function setupWheel(id, data) {
+            const el = document.getElementById(id);
+            el.innerHTML = '<div class="wheel-item empty"></div>' + 
+                data.map(v => `<div class="wheel-item" data-val="${v}">${v}</div>`).join('') + 
+                '<div class="wheel-item empty"></div>';
+
+            let isDown = false, startY, scrollTop;
+            let lastY = 0, lastTime = 0, velocity = 0;
+            let momentumId;
+
+            // 使用 pointer 事件同时兼容鼠标和触摸屏
+            el.addEventListener('pointerdown', (e) => {
+                isDown = true;
+                el.setPointerCapture(e.pointerId); // 捕获指针，防止滑动出界失效
+                startY = e.pageY - el.offsetTop;
+                scrollTop = el.scrollTop;
+                lastY = e.pageY;
+                lastTime = Date.now();
+                velocity = 0;
+                
+                cancelAnimationFrame(momentumId);
+                el.style.scrollSnapType = 'none'; // 拖拽时取消强制吸附，更加顺滑
+            });
+
+            const endDrag = () => {
+                if(!isDown) return;
+                isDown = false;
+                
+                // 惯性滚动循环
+                const momentumLoop = () => {
+                    if (Math.abs(velocity) > 0.1) {
+                        el.scrollTop -= velocity * 16; // 速度系数
+                        velocity *= 0.94; // 摩擦力衰减
+                        momentumId = requestAnimationFrame(momentumLoop);
+                    } else {
+                        // 速度衰减完毕，恢复吸附并触发一次微小位移使其自动对齐
+                        el.style.scrollSnapType = 'y mandatory';
+                        el.scrollTop += 1; el.scrollTop -= 1; 
+                    }
+                };
+                momentumLoop();
+            };
+
+            el.addEventListener('pointerup', endDrag);
+            el.addEventListener('pointercancel', endDrag);
+
+            el.addEventListener('pointermove', (e) => {
+                if(!isDown) return;
+                e.preventDefault();
+                const y = e.pageY;
+                
+                // 跟随手指/鼠标移动
+                const walk = (y - el.offsetTop - startY) * 1.2;
+                el.scrollTop = scrollTop - walk;
+                
+                // 计算瞬时速度 (px/ms)
+                const now = Date.now();
+                const dt = now - lastTime;
+                if (dt > 0) {
+                    velocity = (y - lastY) / dt;
+                    lastY = y;
+                    lastTime = now;
+                }
+            });
+
+            // 监听滚动计算当前激活项，配合防抖发送 change 事件
+            let lastVal = null;
+            el.addEventListener('scroll', () => {
+                const idx = Math.round(el.scrollTop / ITEM_H);
+                const items = el.querySelectorAll('.wheel-item:not(.empty)');
+                items.forEach((it, i) => it.classList.toggle('active', i === idx));
+                
+                clearTimeout(el._scrollTimeout);
+                el._scrollTimeout = setTimeout(() => {
+                    if(items[idx] && items[idx].dataset.val !== lastVal) {
+                        lastVal = items[idx].dataset.val;
+                        el.dispatchEvent(new CustomEvent('change', { detail: lastVal }));
+                    }
+                }, 100);
+            });
+        }
+
+        function setWheelIndex(id, idx, smooth=true) {
+            const el = document.getElementById(id);
+            el.scrollTo({ top: idx * ITEM_H, behavior: smooth ? 'smooth' : 'auto' });
+            
+            setTimeout(() => {
+                const items = el.querySelectorAll('.wheel-item:not(.empty)');
+                items.forEach((it, i) => it.classList.toggle('active', i === idx));
+                if(items[idx]) {
+                    el.dispatchEvent(new CustomEvent('change', { detail: items[idx].dataset.val }));
+                }
+            }, smooth ? 500 : 50);
+        }
+
+        // --- 业务初始化 ---
+        function init() {
+            setupWheel('w-subject', subjectList);
+            setupWheel('w-hour', Array.from({length: 24}, (_, i) => String(i).padStart(2, '0')));
+            setupWheel('w-min', Array.from({length: 60}, (_, i) => String(i).padStart(2, '0')));
+            setupWheel('w-dur', durationList);
+
+            // 联动：科目 -> 时长
+            document.getElementById('w-subject').addEventListener('change', (e) => {
+                let d = 90;
+                if(e.detail === '语文') d = 150;
+                else if(e.detail === '数学' || e.detail === '英语') d = 120;
+                
+                const targetIdx = durationList.indexOf(d);
+                if (targetIdx !== -1) {
+                    const durWheel = document.getElementById('w-dur');
+                    const currentIdx = Math.round(durWheel.scrollTop / ITEM_H);
+                    if (currentIdx !== targetIdx) {
+                        setWheelIndex('w-dur', targetIdx, true);
+                    }
+                }
+            });
+
+            // 初始赋予预设值
+            const now = getNow();
+            let h = now.getHours(), m = now.getMinutes();
+            if(m < 30) m = 30; else { m = 0; h = (h+1)%24; }
+            
+            setTimeout(() => {
+                setWheelIndex('w-subject', 0, false); 
+                setWheelIndex('w-hour', h, false);
+                setWheelIndex('w-min', m, false);
+            }, 100);
+
+            syncTime();
+        }
+
+        // --- 运行逻辑 ---
+        let runTimer;
+        document.getElementById('start-trigger').addEventListener('click', () => {
+            const subjectEl = document.querySelector('#w-subject .active');
+            const hourEl = document.querySelector('#w-hour .active');
+            const minEl = document.querySelector('#w-min .active');
+            const durEl = document.querySelector('#w-dur .active');
+
+            const subject = subjectEl ? subjectEl.dataset.val : subjectList[Math.round(document.getElementById('w-subject').scrollTop / ITEM_H)];
+            const h = parseInt(hourEl ? hourEl.dataset.val : Math.round(document.getElementById('w-hour').scrollTop / ITEM_H));
+            const m = parseInt(minEl ? minEl.dataset.val : Math.round(document.getElementById('w-min').scrollTop / ITEM_H));
+            const dur = parseInt(durEl ? durEl.dataset.val : durationList[Math.round(document.getElementById('w-dur').scrollTop / ITEM_H)]);
+            
+            const now = getNow();
+            const start = new Date(now.getFullYear(), now.getMonth(), now.getDate(), h, m, 0);
+            const end = new Date(start.getTime() + dur * 60000);
+
+            // 设置科目显示
+            document.getElementById('current-subject-display').innerText = `考试科目：${subject}`;
+
+            // 切换布局模式
+            document.body.classList.add('is-running');
+
+            // 延时隐藏 config 以避免闪烁
+            setTimeout(() => { document.getElementById('config-area').style.display = 'none'; }, 500);
+
+            runTimer = setInterval(() => {
+                const _now = getNow();
+                const info = document.getElementById('status-info');
+                const count = document.getElementById('countdown-display');
+
+                if(_now < start) {
+                    info.innerText = "距离考试开始还有";
+                    count.innerText = formatDiff(start - _now);
+                } else if(_now < end) {
+                    info.innerText = "考试进行中，距离结束还有";
+                    count.innerText = formatDiff(end - _now);
+                } else {
+                    info.innerText = "考试已结束";
+                    count.innerText = "0:00:00";
+                    document.getElementById('restart-trigger').style.display = 'block';
+                    clearInterval(runTimer);
+                }
+            }, 500);
+        });
+
+        function formatDiff(ms) {
+            const s = Math.floor(ms/1000);
+            const hh = Math.floor(s/3600);
+            const mm = Math.floor((s%3600)/60);
+            const ss = s%60;
+            return `${hh}:${String(mm).padStart(2,'0')}:${String(ss).padStart(2,'0')}`;
+        }
+
+        document.getElementById('restart-trigger').onclick = () => window.location.reload();
+        window.onload = init;
+    </script>
+</body>
+</html>
